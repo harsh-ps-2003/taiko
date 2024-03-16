@@ -1,0 +1,209 @@
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
+
+use anyhow::Result;
+use clap::Parser;
+use colored::*;
+use handlebars::{no_escape, Handlebars};
+use ignore::WalkBuilder;
+use indicatif::{ProgressBar, ProgressStyle};
+use serde_json::json;
+use termtree::Tree;
+use tiktoken_rs::{cl100k_base, p50k_base, p50k_edit, r50k_base};
+
+#[derive(Parser)]
+#[clap(name = "taiko", version = "1.0.0", author = "Harsh Pratap Singh")]
+struct Cli {
+    #[arg()]
+    path: PathBuf,
+    #[clap(short, long)]
+    include: Option<String>,
+    #[clap(short, long)]
+    exclude: Option<String>,
+    #[clap(short, long)]
+    encoding: Option<String>,
+    #[clap(short, long)]
+    output: Option<String>,
+}
+
+fn main() {
+    let args = Cli::parse();
+
+    let default_template = include_str!("template.hbs");
+
+    let mut handlebars = Handlebars::new();
+    handlebars.register_escape_fn(no_escape);
+    handlebars
+        .register_template_string("default", default_template)
+        .expect("Failed to register default template");
+
+    let spinner = ProgressBar::new_spinner();
+    spinner.enable_steady_tick(std::time::Duration::from_millis(120));
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+            .template("{spinner:.blue} {msg}")
+            .unwrap(),
+    );
+
+    spinner.set_message("Building prompt...");
+
+    let create_tree = traverse_directory(&args.path, &args.include, &args.exclude);
+    let (tree, files) = create_tree.unwrap_or_else(|e| {
+        spinner.finish_with_message(format!("{}", "Failed!".red()));
+        eprintln!(
+            "{}{}{} {}",
+            "(".bold().white(),
+            "x".bold().red(),
+            ")".bold().white(),
+            format!("Failed to build directory tree: {}", e).red()
+        );
+        std::process::exit(1);
+    });
+
+    spinner.finish_with_message(format!("{}", "Done!".green()));
+
+    let data = json!({
+        "absolute_code_path": args.path.canonicalize().unwrap().display().to_string(),
+        "source_tree": tree,
+        "files": files,
+    });
+
+    let rendered = handlebars
+        .render("default", &data)
+        .expect("Failed to render default template");
+    let rendered = rendered.trim();
+
+    let (bpe, model_info) = match args.encoding.as_deref().unwrap_or("cl100k") {
+        "cl100k" => (cl100k_base(), "ChatGPT models, text-embedding-ada-002"),
+        "p50k" => (
+            p50k_base(),
+            "Code models, text-davinci-002, text-davinci-003",
+        ),
+        "p50k_edit" => (
+            p50k_edit(),
+            "Edit models like text-davinci-edit-001, code-davinci-edit-001",
+        ),
+        "r50k" | "gpt2" => (r50k_base(), "GPT-3 models like davinci"),
+        _ => (cl100k_base(), "ChatGPT models, text-embedding-ada-002"),
+    };
+
+    let token_count = bpe.unwrap().encode_with_special_tokens(&rendered).len();
+
+    println!(
+        "{}{}{} Token count: {}, Model info: {}",
+        "[".bold().white(),
+        "i".bold().blue(),
+        "]".bold().white(),
+        token_count.to_string().bold().yellow(),
+        model_info
+    );
+
+    if let Some(output_path) = args.output {
+        let file = std::fs::File::create(&output_path).expect("Failed to create output file");
+        let mut writer = std::io::BufWriter::new(file);
+        write!(writer, "{}", rendered).expect("Failed to write to output file");
+
+        println!(
+            "{}{}{} {}",
+            "(".bold().white(),
+            "✓".bold().green(),
+            ")".bold().white(),
+            format!("Prompt written to file: {}", output_path).green()
+        );
+    }
+}
+
+#[inline]
+fn wrap_code_block(code: &str, extension: &str) -> String {
+    let backticks = "`".repeat(7);
+    format!("{}{}\n{}\n{}", backticks, extension, code, backticks)
+}
+
+#[inline]
+fn label<P: AsRef<Path>>(p: P) -> String {
+    let path = p.as_ref();
+    if path.file_name().is_none() {
+        // If the path is the current directory or a root directory
+        path.to_str().unwrap_or(".").to_owned()
+    } else {
+        // Otherwise, use the file name as the label
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+            .to_owned()
+    }
+}
+
+fn traverse_directory(
+    root_path: &PathBuf,
+    include: &Option<String>,
+    exclude: &Option<String>,
+) -> Result<(String, Vec<serde_json::Value>)> {
+    let mut files = Vec::new();
+
+    let canonical_root_path = root_path.canonicalize()?;
+
+    let tree = WalkBuilder::new(&canonical_root_path)
+        .git_ignore(true)
+        .build()
+        .filter_map(|e| e.ok())
+        .fold(Tree::new(label(&canonical_root_path)), |mut root, entry| {
+            let path = entry.path();
+            if let Ok(relative_path) = path.strip_prefix(&canonical_root_path) {
+                let mut current_tree = &mut root;
+                for component in relative_path.components() {
+                    let component_str = component.as_os_str().to_string_lossy().to_string();
+
+                    current_tree = if let Some(pos) = current_tree
+                        .leaves
+                        .iter_mut()
+                        .position(|child| child.root == component_str)
+                    {
+                        &mut current_tree.leaves[pos]
+                    } else {
+                        let new_tree = Tree::new(component_str.clone());
+                        current_tree.leaves.push(new_tree);
+                        current_tree.leaves.last_mut().unwrap()
+                    };
+                }
+
+                if path.is_file() {
+                    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+
+                    if let Some(ref exclude_ext) = exclude {
+                        let exclude_extensions: Vec<&str> =
+                            exclude_ext.split(',').map(|s| s.trim()).collect();
+                        if exclude_extensions.contains(&extension) {
+                            return root;
+                        }
+                    }
+
+                    if let Some(ref filter_ext) = include {
+                        let filter_extensions: Vec<&str> =
+                            filter_ext.split(',').map(|s| s.trim()).collect();
+                        if !filter_extensions.contains(&extension) {
+                            return root;
+                        }
+                    }
+
+                    let code_bytes = fs::read(&path).expect("Failed to read file");
+                    let code = String::from_utf8_lossy(&code_bytes);
+                    let code_block = wrap_code_block(&code, extension);
+                    if !code.trim().is_empty() && !code.contains(char::REPLACEMENT_CHARACTER) {
+                        files.push(json!({
+                            "path": path.display().to_string(),
+                            "extension": extension,
+                            "code": code_block,
+                        }));
+                    }
+                }
+            }
+            root
+        });
+
+    Ok((tree.to_string(), files))
+}
