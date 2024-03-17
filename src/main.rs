@@ -45,7 +45,7 @@ fn main() {
     spinner.set_style(
         ProgressStyle::default_spinner()
             .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-            .template("{spinner:.blue} {msg}")
+            .template("{spinner:.yellow} {msg}")
             .unwrap(),
     );
 
@@ -78,26 +78,26 @@ fn main() {
     let rendered = rendered.trim();
 
     let (bpe, model_info) = match args.encoding.as_deref().unwrap_or("cl100k") {
-        "cl100k" => (cl100k_base(), "ChatGPT models, text-embedding-ada-002"),
+        "cl100k" => (cl100k_base(), "for models - gpt-4-*, gpt-3.5-turbo-*"),
         "p50k" => (
             p50k_base(),
-            "Code models, text-davinci-002, text-davinci-003",
+            "for models - text-davinci-*, code-davinci-* and more code models",
         ),
         "p50k_edit" => (
             p50k_edit(),
-            "Edit models like text-davinci-edit-001, code-davinci-edit-001",
+            "Edit models like text-davinci-edit-001, code-davinci-edit-001, text-curie-001, text-babbage-001 and more",
         ),
         "r50k" | "gpt2" => (r50k_base(), "GPT-3 models like davinci"),
-        _ => (cl100k_base(), "ChatGPT models, text-embedding-ada-002"),
+        _ => (cl100k_base(), "for models - gpt-4-*, gpt-3.5-turbo-*"),
     };
 
     let token_count = bpe.unwrap().encode_with_special_tokens(&rendered).len();
 
     println!(
         "{}{}{} Token count: {}, Model info: {}",
-        "[".bold().white(),
+        "(".bold().white(),
         "i".bold().blue(),
-        "]".bold().white(),
+        ")".bold().white(),
         token_count.to_string().bold().yellow(),
         model_info
     );
@@ -127,10 +127,8 @@ fn wrap_code_block(code: &str, extension: &str) -> String {
 fn label<P: AsRef<Path>>(p: P) -> String {
     let path = p.as_ref();
     if path.file_name().is_none() {
-        // If the path is the current directory or a root directory
         path.to_str().unwrap_or(".").to_owned()
     } else {
-        // Otherwise, use the file name as the label
         path.file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("")
