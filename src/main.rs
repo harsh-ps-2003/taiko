@@ -23,7 +23,7 @@ struct Cli {
     include: Option<String>,
     #[clap(short, long)]
     exclude: Option<String>,
-    #[clap(short, long)]
+    #[clap(short='n', long)]
     encoding: Option<String>,
     #[clap(short, long)]
     output: Option<String>,
