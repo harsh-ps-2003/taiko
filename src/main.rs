@@ -151,7 +151,7 @@ fn traverse_directory(
         let gitignore_reader = io::BufReader::new(gitignore_file);
         for line in gitignore_reader.lines() {
             if let Ok(line) = line {
-                ignore_builder.add_line(None, &line);
+                let _ = ignore_builder.add_line(None, &line);
             }
         }
     }
