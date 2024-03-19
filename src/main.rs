@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::Write,
+    io::{self, BufRead, Write},
     path::{Path, PathBuf},
 };
 
@@ -144,11 +144,31 @@ fn traverse_directory(
     let mut files = Vec::new();
 
     let canonical_root_path = root_path.canonicalize()?;
+    let gitignore_path = canonical_root_path.join(".gitignore");
+
+    let mut ignore_builder = ignore::gitignore::GitignoreBuilder::new(&canonical_root_path);
+    if let Ok(gitignore_file) = fs::File::open(&gitignore_path) {
+        let gitignore_reader = io::BufReader::new(gitignore_file);
+        for line in gitignore_reader.lines() {
+            if let Ok(line) = line {
+                ignore_builder.add_line(None, &line);
+            }
+        }
+    }
 
     let tree = WalkBuilder::new(&canonical_root_path)
-        .git_ignore(true)
+        .git_ignore(false)
         .build()
         .filter_map(|e| e.ok())
+        .filter(|entry| {
+            let relative_path = entry
+                .path()
+                .strip_prefix(&canonical_root_path)
+                .unwrap_or_else(|_| entry.path());
+
+            let is_ignored = ignore_builder.build().unwrap().matched(relative_path, false).is_ignore();
+            !is_ignored
+        })
         .fold(Tree::new(label(&canonical_root_path)), |mut root, entry| {
             let path = entry.path();
             if let Ok(relative_path) = path.strip_prefix(&canonical_root_path) {
