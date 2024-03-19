@@ -136,6 +136,23 @@ fn label<P: AsRef<Path>>(p: P) -> String {
     }
 }
 
+fn is_binary(path: &Path) -> bool {
+    if let Ok(file) = fs::File::open(path) {
+        let reader = io::BufReader::new(file);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                for byte in line.bytes() {
+                    if byte == b'\0' || !byte.is_ascii_graphic() {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false 
+}
+
 fn traverse_directory(
     root_path: &PathBuf,
     include: &Option<String>,
@@ -175,7 +192,6 @@ fn traverse_directory(
                 let mut current_tree = &mut root;
                 for component in relative_path.components() {
                     let component_str = component.as_os_str().to_string_lossy().to_string();
-
                     current_tree = if let Some(pos) = current_tree
                         .leaves
                         .iter_mut()
@@ -188,10 +204,8 @@ fn traverse_directory(
                         current_tree.leaves.last_mut().unwrap()
                     };
                 }
-
-                if path.is_file() {
+                if path.is_file() && !is_binary(&path) { 
                     let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-
                     if let Some(ref exclude_ext) = exclude {
                         let exclude_extensions: Vec<&str> =
                             exclude_ext.split(',').map(|s| s.trim()).collect();
@@ -199,7 +213,6 @@ fn traverse_directory(
                             return root;
                         }
                     }
-
                     if let Some(ref filter_ext) = include {
                         let filter_extensions: Vec<&str> =
                             filter_ext.split(',').map(|s| s.trim()).collect();
@@ -207,7 +220,6 @@ fn traverse_directory(
                             return root;
                         }
                     }
-
                     let code_bytes = fs::read(&path).expect("Failed to read file");
                     let code = String::from_utf8_lossy(&code_bytes);
                     let code_block = wrap_code_block(&code, extension);
