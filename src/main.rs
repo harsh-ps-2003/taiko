@@ -74,7 +74,7 @@ fn main() {
 
     let rendered = handlebars
         .render("default", &data)
-        .expect("Failed to render default template");
+        .expect("Failed to render template");
     let rendered = rendered.trim();
 
     let (bpe, model_info) = match args.encoding.as_deref().unwrap_or("cl100k") {
