@@ -14,6 +14,9 @@ name = "taiko"
 test = false
 bench = false
 
+[toolchain]
+channel = "stable"
+
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
 handlebars = "5.1.0"
