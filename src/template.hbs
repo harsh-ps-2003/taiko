@@ -1,0 +1,20 @@
+Project Path: {{ absolute_code_path }}
+
+I want you to carefully review the code in this project. Take your time, think step-by-step, and consider all the code paths and interactions between different parts of the codebase.
+
+Source Tree:
+
+```
+{{ source_tree }}
+```
+
+{{#each files}}
+{{#if code}}
+`{{path}}`:
+
+{{code}}
+
+{{/if}}
+{{/each}}
+
+{{!-- Add your prompt here --}}

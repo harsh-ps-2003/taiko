@@ -1,0 +1,37 @@
+[package]
+name = "taiko"
+version = "1.0.0"
+authors = ["Harsh Pratap Singh <harshpratapsingh8210@gmail.com>"]
+description = "Generate LLM prompt from your local codebase!"
+repository = "https://github.com/harsh-ps-2003/taiko"
+license = "MIT"
+readme = "README.md"
+exclude = [".github/*", ".assets/*"]
+edition = "2021"
+
+[[bin]]
+name = "taiko"
+test = false
+bench = false
+
+[workspace]
+members = ["prompt-macro"]
+
+[dependencies]
+prompt-macro = { package = "prompt-macro", path = "./prompt-macro" }
+clap = { version = "4.0", features = ["derive"] }
+handlebars = "5.1.0"
+jwalk = "0.8"
+termtree = "0.4"
+cli-clipboard = "0.4"
+serde_json = "1.0.114"
+indicatif = "0.17.8"
+colored = "2.1.0"
+tiktoken-rs = "0.5.8"
+ignore = "0.4.22"
+anyhow = "1.0.80"
+
+[profile.release]
+lto = "thin"
+panic = 'abort'
+codegen-units = 1
