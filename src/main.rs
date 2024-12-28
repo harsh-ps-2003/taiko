@@ -7,7 +7,6 @@ use std::{
 use anyhow::Result;
 use clap::Parser;
 use colored::*;
-use handlebars::{no_escape, Handlebars};
 use ignore::WalkBuilder;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::json;
@@ -36,14 +35,6 @@ struct Cli {
 
 fn main() {
     let args = Cli::parse();
-
-    let default_template = include_str!("template.hbs");
-
-    let mut handlebars = Handlebars::new();
-    handlebars.register_escape_fn(no_escape);
-    handlebars
-        .register_template_string("default", default_template)
-        .expect("Failed to register default template");
 
     let spinner = ProgressBar::new_spinner();
     spinner.enable_steady_tick(std::time::Duration::from_millis(120));
@@ -77,27 +68,18 @@ fn main() {
             file["code"].as_str().unwrap())
     }).collect::<Vec<_>>().join("\n");
 
+    let content = format!(
+        "Project Path: {}\n\nProject Structure:\n{}\n\nFiles Content:\n{}",
+        args.path.canonicalize().unwrap().display(),
+        tree,
+        files_content
+    );
+
     let prompt = match args.prompt_type.as_str() {
-        "code_review" => prompts::code_review_prompt(
-            &args.path.canonicalize().unwrap().display().to_string(),
-            &tree,
-            &files_content
-        ),
-        "security" => prompts::security_audit_prompt(
-            &args.path.canonicalize().unwrap().display().to_string(),
-            &tree,
-            &files_content
-        ),
-        "docs" => prompts::documentation_prompt(
-            &args.path.canonicalize().unwrap().display().to_string(),
-            &tree,
-            &files_content
-        ),
-        _ => prompts::code_review_prompt(
-            &args.path.canonicalize().unwrap().display().to_string(),
-            &tree,
-            &files_content
-        ),
+        "code_review" => prompts::code_review(&content),
+        "security" => prompts::security_audit(&content),
+        "docs" => prompts::documentation(&content),
+        _ => prompts::code_review(&content),
     };
 
     let (bpe, model_info) = match args.encoding.as_deref().unwrap_or("cl100k") {
