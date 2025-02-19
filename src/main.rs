@@ -23,7 +23,7 @@ struct Cli {
     path: PathBuf,
     #[clap(short, long)]
     include: Option<String>,
-    #[clap(short, long)]
+    #[clap(short, long, help = "Exclude patterns: file.ext (specific file), .ext (extension), dir/ (directory)")]
     exclude: Option<String>,
     #[clap(short='n', long)]
     encoding: Option<String>,
@@ -31,6 +31,69 @@ struct Cli {
     output: Option<String>,
     #[clap(short, long, default_value = "code_review")]
     prompt_type: String,
+}
+
+#[derive(Debug)]
+struct ExcludePattern {
+    full_name: Vec<String>,    // e.g., "abc.xyz"
+    extensions: Vec<String>,   // e.g., ".xyz"
+    directories: Vec<String>,  // e.g., "def"
+}
+
+impl ExcludePattern {
+    fn new(pattern: &str) -> Self {
+        let mut full_name = Vec::new();
+        let mut extensions = Vec::new();
+        let mut directories = Vec::new();
+
+        for p in pattern.split(',').map(|s| s.trim()) {
+            if p.starts_with('.') {
+                // Extension pattern (e.g., ".rs")
+                extensions.push(p[1..].to_string());
+            } else if p.contains('.') {
+                // Full filename pattern (e.g., "Cargo.toml")
+                full_name.push(p.to_string());
+            } else {
+                // Directory pattern (e.g., "target")
+                directories.push(p.to_string());
+            }
+        }
+
+        Self {
+            full_name,
+            extensions,
+            directories,
+        }
+    }
+
+    fn should_exclude(&self, path: &Path) -> bool {
+        let file_name = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        
+        let extension = path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+
+        // Check full filename match
+        if self.full_name.iter().any(|name| name == file_name) {
+            return true;
+        }
+
+        // Check extension match
+        if self.extensions.iter().any(|ext| ext == extension) {
+            return true;
+        }
+
+        // Check directory match
+        if path.is_dir() {
+            if self.directories.iter().any(|dir| file_name == dir) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 fn main() {
@@ -166,6 +229,7 @@ fn traverse_directory(
     exclude: &Option<String>,
 ) -> Result<(String, Vec<serde_json::Value>)> {
     let mut files = Vec::new();
+    let exclude_pattern = exclude.as_ref().map(|p| ExcludePattern::new(p));
 
     let canonical_root_path = root_path.canonicalize()?;
     let gitignore_path = canonical_root_path.join(".gitignore");
@@ -185,13 +249,18 @@ fn traverse_directory(
         .build()
         .filter_map(|e| e.ok())
         .filter(|entry| {
-            let relative_path = entry
-                .path()
-                .strip_prefix(&canonical_root_path)
-                .unwrap_or_else(|_| entry.path());
+            let path = entry.path();
+            let relative_path = path.strip_prefix(&canonical_root_path)
+                .unwrap_or_else(|_| path);
 
             let is_ignored = ignore_builder.build().unwrap().matched(relative_path, false).is_ignore();
-            !is_ignored
+            
+            // Check if path should be excluded based on patterns
+            let should_exclude = exclude_pattern.as_ref()
+                .map(|pattern| pattern.should_exclude(relative_path))
+                .unwrap_or(false);
+
+            !is_ignored && !should_exclude
         })
         .fold(Tree::new(label(&canonical_root_path)), |mut root, entry| {
             let path = entry.path();
@@ -213,13 +282,6 @@ fn traverse_directory(
                 }
                 if path.is_file() && !is_binary(&path) { 
                     let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-                    if let Some(ref exclude_ext) = exclude {
-                        let exclude_extensions: Vec<&str> =
-                            exclude_ext.split(',').map(|s| s.trim()).collect();
-                        if exclude_extensions.contains(&extension) {
-                            return root;
-                        }
-                    }
                     if let Some(ref filter_ext) = include {
                         let filter_extensions: Vec<&str> =
                             filter_ext.split(',').map(|s| s.trim()).collect();

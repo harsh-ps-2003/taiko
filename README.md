@@ -1,25 +1,22 @@
 # Taiko
 
-A powerful CLI tool for generating AI prompts from your codebase. Perfect for code reviews, security audits, and documentation generation.
+A CLI tool to generate LLM prompts from the codebase.
 
 ## Features
 
-- 🔍 Generate structured prompts for code review
-- 🛡️ Security audit prompt generation
-- 📚 Documentation prompt generation
+- 🔍 Generate structured prompts of the codebase
 - 🎯 Smart file filtering and gitignore support
 - 📊 Token counting for different LLM models
-- 🚀 Fast and efficient codebase traversal
+- 📁 Flexible file and directory exclusion
+
+# Whats this for?
+
+* The primary purpose of generated markdown files is to serve as input to a LLM, such as those provided by OpenAI (GPT-4, GPT-3.5 Turbo), Anthropic (Claude), or others. The Markdown file contains a structured representation of the codebase, ready to be fed into an LLM.
+
+* The token count is crucial. LLMs have a limited context window (e.g., GPT-4 has variants with 8k, 32k, and 128k token limits). The precise token count tells you exactly how much of a model's context window this codebase representation will consume. This is far more accurate than naive character counting or word counting. Knowing the token count allows you to
+choose the right model - If your token count exceeds a model's limit, you know you need to use a model with a larger context window, or you need to reduce the size of the input (more on this below), avoid errors - attempting to send more tokens than a model can handle will result in an error and estimate costs - many LLM APIs charge based on token usage. The accurate token count allows you to estimate the cost of processing your codebase.
 
 ## Installation
-
-### Using Cargo (Recommended)
-
-```bash
-cargo install taiko
-```
-
-### Building from Source
 
 1. Clone the repository:
 ```bash
@@ -34,15 +31,6 @@ cargo install --path .
 
 ## Usage
 
-Features :
-Respects .gitignore files to exclude 
-unwanted files and directories,
-Handles binary files gracefully,
-Customize the prompt using Handlebar to 
-generate Markdown,
-Filter by extension,
-Display's the token count.
-
 ```bash
 # Generate a code review prompt
 taiko . -o review.md
@@ -53,11 +41,12 @@ taiko . -p security -o security.md
 # Generate documentation prompt
 taiko . -p docs -o docs.md
 
-# Filter specific file types
-taiko . -i "rs,toml" -o review.md
-
-# Exclude specific file types
-taiko . -e "json,md" -o review.md
+# Exclude patterns
+taiko . -e "Cargo.lock,target,.md" -o review.md
+# This will exclude:
+# - Specific file: "Cargo.lock"
+# - Directory: "target"
+# - File extension: ".md" (all markdown files)
 
 # Choose specific tokenizer
 taiko . -n p50k -o review.md
@@ -67,13 +56,32 @@ taiko . -n p50k -o review.md
 
 ```
 Options:
-  -i, --include <PATTERN>    Include only specific file extensions (comma-separated)
-  -e, --exclude <PATTERN>    Exclude specific file extensions (comma-separated)
-  -n, --encoding <MODEL>     Choose tokenizer model [default: cl100k]
-  -o, --output <FILE>        Output file path
-  -p, --prompt-type <TYPE>   Prompt type [default: code_review]
-  -h, --help                 Print help
-  -V, --version             Print version
+  -i, --include <PATTERN>      Include only specific file extensions (comma-separated)
+  -e, --exclude <PATTERN>      Exclude patterns (comma-separated):
+                              - file.ext: Exclude specific file
+                              - .ext: Exclude all files with extension
+                              - dir: Exclude directory
+  -n, --encoding <MODEL>       Choose tokenizer model [default: cl100k]
+  -o, --output <FILE>          Output file path
+  -p, --prompt-type <TYPE>     Prompt type [default: code_review]
+  -h, --help                   Print help
+  -V, --version               Print version
+```
+
+### Exclude Pattern Examples
+
+```bash
+# Exclude specific files
+taiko . -e "Cargo.lock,package-lock.json" -o review.md
+
+# Exclude file extensions
+taiko . -e ".md,.json,.lock" -o review.md
+
+# Exclude directories
+taiko . -e "target,node_modules,dist" -o review.md
+
+# Mix different patterns
+taiko . -e "Cargo.lock,.md,target,dist,.json" -o review.md
 ```
 
 ### Available Tokenizers
